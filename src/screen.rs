@@ -1,24 +1,36 @@
 use std::process;
 
-use ggez::{event::EventHandler, Context, GameResult, graphics::{Canvas, Quad, DrawParam, Color, Rect}, input::keyboard::KeyInput, winit::event::VirtualKeyCode, glam::Vec2};
+use ggez::{
+    event::EventHandler,
+    glam::Vec2,
+    graphics::{Canvas, DrawParam, Image, Rect, Sampler, Quad, Color},
+    input::keyboard::KeyInput,
+    winit::event::VirtualKeyCode,
+    Context, GameResult,
+};
 
-use crate::api::{GameObject, FixableGameObject};
+use crate::{api::{FixableGameObject, GameObject}, pause::GameOverScreen};
 
 pub struct Window {
     frame: usize,
-    components: Vec<Box<dyn GameObject>>,
-    width: u32,
-    height: u32
+    components: Vec<FixableGameObject>,
+    background: Image,
+    menu: Option<Box<dyn GameObject>>
 }
 
 impl Window {
+
+    pub fn pause(&mut self, menu: Box<dyn GameObject>) {
+        self.menu = Some(menu);
+    }
+
     /// Creates a new window.
-    pub fn new(width: u32, height: u32) -> Window {
+    pub fn new(ctx: &Context) -> Window {
         Window {
             frame: 0,
             components: Vec::new(),
-            width,
-            height
+            background: Image::from_path(ctx, "/background.png").unwrap(),
+            menu: None
         }
     }
 
@@ -33,21 +45,38 @@ impl Window {
     /// child: impl GameObject + 'static
     /// ```
     /// - The `GameObject` component to add
-    pub fn add_component(&mut self, child: Box<dyn GameObject>) {
+    pub fn add_component(&mut self, child: FixableGameObject) {
         self.components.push(child);
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.menu.is_some()
     }
 }
 
 impl EventHandler for Window {
-
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         self.frame += 1;
 
-        // Update components
-        for component in &mut self.components {
-            component.update()?;
+        if self.is_paused() {
+            return Ok(())
         }
 
+        // Update components
+        let mut game_over = false;
+        for component in &mut self.components {
+            component.update()?;
+            if component.is_broken() && component.key_object.as_ref().unwrap().frames_existed > 120 {
+                game_over = true;
+                break;
+            }
+        }
+
+        if game_over {
+            self.pause(Box::new(GameOverScreen::new()));
+        }
+
+        std::thread::yield_now();
         Ok(())
     }
 
@@ -56,8 +85,16 @@ impl EventHandler for Window {
             if input.keycode.unwrap() == VirtualKeyCode::Escape {
                 process::exit(0);
             }
+
+            let mut fixed_something = false;
             for component in &mut self.components {
-                component.on_key_pressed(&input.keycode.unwrap())?;
+                if component.on_key_pressed(&input.keycode.unwrap()) {
+                    fixed_something = true
+                }
+            }
+
+            if !fixed_something {
+                self.pause(Box::new(GameOverScreen::new()));
             }
         }
         Ok(())
@@ -74,28 +111,49 @@ impl EventHandler for Window {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = Canvas::from_frame(ctx, None);
+        canvas.set_sampler(Sampler::nearest_clamp());
 
-        canvas.draw(
-            &Quad,
-            DrawParam::default()
-                .color(Color::WHITE)
-                .dest_rect(Rect::new(0., 0., self.width as f32, self.height as f32)),
-        );
+        if self.menu.is_some() {
+            self.menu.as_ref().unwrap().draw(ctx, &mut canvas)?;
+        } else {
 
-        for child in &self.components {
-            child.draw(ctx, &mut canvas)?;
+            canvas.draw(&Quad, DrawParam::default().color(Color::BLACK).dest_rect(Rect::new(0., 0., 5000., 5000.)));
+            canvas.draw(&self.background, DrawParam::default().dest_rect(Rect::new(0., 0., 6.4, 6.4)));
+
+            for child in &self.components {
+                child.draw(ctx, &mut canvas)?;
+            }
+
+            for child in &self.components {
+                if child.key_object.is_some() {
+                    child.key_object.as_ref().unwrap().draw(ctx, &mut canvas)?;
+                }
+            }
         }
-
+        
         canvas.finish(ctx)?;
 
         Ok(())
     }
 }
 
-pub fn create_objects(ctx: &Context) -> [Box<dyn GameObject>; 1] {
+/// Returns an array of the game objects boxed that needed to be added to the window.
+pub fn create_objects(ctx: &Context) -> [FixableGameObject; 6] {
+    let window = FixableGameObject::new("/window", Vec2::new(1165., 51.), &VirtualKeyCode::W, ctx);
 
-    let painting = FixableGameObject::new("/painting", Vec2::new(1200., 300.), &VirtualKeyCode::P, ctx);
-    
-    let objects: [Box<dyn GameObject>; 1] = [Box::new(painting)];
-    objects
+    let lamp = FixableGameObject::new("/lamp", Vec2::new(1478., 384.), &VirtualKeyCode::L, ctx);
+    let drawer_1 = FixableGameObject::new("/drawer", Vec2::new(1188., 767.), &VirtualKeyCode::D, ctx);
+    let drawer_2 = FixableGameObject::new("/drawer", Vec2::new(1188., 645.), &VirtualKeyCode::D, ctx);
+    let drawer_3 = FixableGameObject::new("/drawer", Vec2::new(1188., 525.), &VirtualKeyCode::D, ctx);
+
+    let rug = FixableGameObject::new("/rug", Vec2::new(1343., 935.), &VirtualKeyCode::R, ctx);
+
+    [
+        window, 
+        rug,
+        lamp,
+        drawer_1, 
+        drawer_2, 
+        drawer_3
+    ]
 }

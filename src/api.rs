@@ -44,8 +44,8 @@ pub trait GameObject {
     /// ```
     /// The key pressed.
     ///
-    fn on_key_pressed(&mut self, _code: &VirtualKeyCode) -> GameResult {
-        Ok(())
+    fn on_key_pressed(&mut self, _code: &VirtualKeyCode) -> bool {
+        false
     }
 
     /// Called when a key is released.
@@ -71,7 +71,7 @@ pub struct FixableGameObject {
     broken_texture: Image,
     fix_key: &'static VirtualKeyCode,
     frames_since_broken: Option<i32>,
-    key_object: Option<KeyPopup>,
+    pub key_object: Option<KeyPopup>,
 }
 
 impl FixableGameObject {
@@ -130,50 +130,42 @@ impl FixableGameObject {
     /// "Breaks" this object. The texture is updated to the broken version and the timer will be changed.
     pub fn mess_up(&mut self) {
         self.frames_since_broken = Some(0);
-        let center = self.position + self.dimensions() / 2.;
-        self.key_object = Some(KeyPopup::new(center - KeyPopup::dimensions() / 2. + Vec2::new(0., 100.), self.fix_key));
+        let dimensions = Vec2::new(self.broken_texture.width() as f32, self.broken_texture.height() as f32) * 6.4;
+        let center = self.position + dimensions/2.;
+
+        self.key_object = Some(KeyPopup::new(Vec2::new(center.x - 51.2, center.y + 35.), self.fix_key));
     }
 
-    /// Returns the dimensions to display the image at. To display the texture properly
-    /// without scaling or stretching issues, this should match the aspect ratio of the image
-    /// and be no larger than the image.
-    fn dimensions(&self) -> Vec2 {
-        Vec2::new(300., 300.)
-    }
 }
 
 impl GameObject for FixableGameObject {
 
-    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+    fn draw(&self, _ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
 
         // Get drawing arguments
-        let scale_factor: f32 = self.dimensions().x / self.texture.width() as f32;
         let texture = if self.is_broken() { &self.broken_texture } else { &self.texture };
 
         // Draw the image
-        canvas.draw(texture, DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, scale_factor, scale_factor)));
-
-        // Draw the key icon if this is broken
-        if self.key_object.is_some() {
-            self.key_object.as_ref().unwrap().draw(ctx, canvas)?;
-        }
+        canvas.draw(texture, DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, 6.4, 6.4)));
 
         // Exit with no errors
         Ok(())
     }
 
-    fn on_key_pressed(&mut self, code: &VirtualKeyCode) -> GameResult {
-        if code == self.fix_key {
+    fn on_key_pressed(&mut self, code: &VirtualKeyCode) -> bool {
+        if code == self.fix_key && self.is_broken() {
             self.frames_since_broken = None;
             self.key_object = None;
+            return true;
         }
 
-        Ok(())
+        false
     }
 
     fn update(&mut self) -> GameResult {
         if self.is_broken() {
             self.frames_since_broken = Some(self.frames_since_broken.as_ref().unwrap() + 1);
+            self.key_object.as_mut().unwrap().update()?;
         } else {
             let chance_to_break_per_frame = 0.005;
             if rand::thread_rng().gen_range(0. ..1.) < chance_to_break_per_frame {
@@ -184,9 +176,10 @@ impl GameObject for FixableGameObject {
     }
 }
 
-struct KeyPopup {
+pub struct KeyPopup {
     position: Vec2,
-    text: Text
+    text: Text,
+    pub frames_existed: i32,
 }
 
 impl KeyPopup {
@@ -217,7 +210,8 @@ impl KeyPopup {
         // Return the key game object
         Self {
             position,
-            text
+            text,
+            frames_existed: 0
         }
     }
 
@@ -233,16 +227,21 @@ impl KeyPopup {
 
 impl GameObject for KeyPopup {
 
+    fn update(&mut self) -> GameResult {
+        self.frames_existed += 1;
+
+        return Ok(());
+    }
+
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
 
         // Draw the key
-        let scale_factor: f32 = KeyPopup::dimensions().x / KeyPopup::texture(ctx).width() as f32;
-        canvas.draw(&KeyPopup::texture(ctx), DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, scale_factor, scale_factor)));
+        canvas.draw(&KeyPopup::texture(ctx), DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, 6.4, 6.4)));
 
         // Draw the text
         let text_position = self.position + KeyPopup::dimensions() / 2. - Vec2::new(11., 22.);
         canvas.draw(&self.text, DrawParam::new().dest_rect(Rect::new(text_position.x, text_position.y, 3., 3.)));
-
+        
         // Exit with no errors
         Ok(())
     }
