@@ -158,9 +158,10 @@ impl EventHandler for Window {
 }
 
 /// Returns an array of the game objects boxed that needed to be added to the window.
-pub fn create_objects(ctx: &Context) -> [FixableGameObject; 6] {
+pub fn create_objects(ctx: &Context) -> [FixableGameObject; 7] {
     let window = FixableGameObject::new("/window", Vec2::new(1165., 51.), &VirtualKeyCode::W, ctx);
 
+    let milk = FixableGameObject::new("/milk", Vec2::new(1220., 384.), &VirtualKeyCode::M, ctx);
     let lamp = FixableGameObject::new("/lamp", Vec2::new(1478., 384.), &VirtualKeyCode::L, ctx);
     let drawer_1 = FixableGameObject::new("/drawer", Vec2::new(1188., 767.), &VirtualKeyCode::D, ctx);
     let drawer_2 = FixableGameObject::new("/drawer", Vec2::new(1188., 645.), &VirtualKeyCode::D, ctx);
@@ -170,6 +171,7 @@ pub fn create_objects(ctx: &Context) -> [FixableGameObject; 6] {
 
     [
         window, 
+        milk,
         rug,
         lamp,
         drawer_1, 
