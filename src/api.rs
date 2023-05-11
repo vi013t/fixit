@@ -1,6 +1,6 @@
 use rand::Rng;
 use std::path::PathBuf;
-
+use crate::screen::GameState;
 use ggez::{
     glam::Vec2,
     graphics::{Canvas, DrawParam, Image, Rect, Text},
@@ -28,7 +28,7 @@ pub trait GameObject {
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult;
 
     /// Updates this component every frame.
-    fn update(&mut self) -> GameResult {
+    fn update(&mut self, _state: &GameState) -> GameResult {
         Ok(())
     }
 
@@ -69,19 +69,18 @@ pub struct FixableGameObject {
     position: Vec2,
     texture: Image,
     broken_texture: Image,
-    fix_key: &'static VirtualKeyCode,
+    pub fix_key: &'static VirtualKeyCode,
     frames_since_broken: Option<i32>,
     pub key_object: Option<KeyPopup>,
 }
 
 impl FixableGameObject {
-
     /// Creates a new instance of a "fixable" / "breakable" game object.
     /// ## Parameters
     /// ```rust
     /// texture: &str
     /// ```
-    /// - The texture for the object, represented as a path to the image file relative to `resources`. 
+    /// - The texture for the object, represented as a path to the image file relative to `resources`.
     /// ```rust
     /// position: Vec2
     /// ```
@@ -93,11 +92,11 @@ impl FixableGameObject {
     /// ```rust
     /// ctx: &Context
     /// ```
-    /// - The drawing context, used to fetch the image texture. 
-    /// 
+    /// - The drawing context, used to fetch the image texture.
+    ///
     /// ### Returns
-    /// The newly created `FixableGameObject`. 
-    /// 
+    /// The newly created `FixableGameObject`.
+    ///
     pub fn new(texture: &str, position: Vec2, fix_key: &'static VirtualKeyCode, ctx: &Context) -> Self {
         Self {
             position,
@@ -111,13 +110,13 @@ impl FixableGameObject {
 
     /// Returns whether or not this object is currently "broken" and is awaiting keyboard input
     /// to be fixed.
-    /// 
+    ///
     /// ### Parameters
     /// ```rust
     /// &self
     /// ```
     /// - A reference to the object to check
-    /// 
+    ///
     /// ### Returns
     /// ```rust
     /// bool
@@ -125,28 +124,40 @@ impl FixableGameObject {
     /// - Whether or not the object is broken
     pub fn is_broken(&self) -> bool {
         self.frames_since_broken.is_some()
-    }
+    } 
 
     /// "Breaks" this object. The texture is updated to the broken version and the timer will be changed.
-    pub fn mess_up(&mut self) {
+    pub fn mess_up(&mut self, state: &GameState) {
         self.frames_since_broken = Some(0);
-        let dimensions = Vec2::new(self.broken_texture.width() as f32, self.broken_texture.height() as f32) * 6.4;
-        let center = self.position + dimensions/2.;
+        let dimensions = Vec2::new(
+            self.broken_texture.width() as f32,
+            self.broken_texture.height() as f32,
+        ) * 6.4;
+        let center = self.position + dimensions / 2.;
+        let bottom = self.position.y + dimensions.y;
 
-        self.key_object = Some(KeyPopup::new(Vec2::new(center.x - 51.2, center.y + 35.), self.fix_key));
+        self.key_object = Some(KeyPopup::new(
+            Vec2::new(center.x, bottom),
+            self.fix_key,
+            state.broken_lifetime 
+        ));
     }
-
 }
 
 impl GameObject for FixableGameObject {
-
     fn draw(&self, _ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-
         // Get drawing arguments
-        let texture = if self.is_broken() { &self.broken_texture } else { &self.texture };
+        let texture = if self.is_broken() {
+            &self.broken_texture
+        } else {
+            &self.texture
+        };
 
         // Draw the image
-        canvas.draw(texture, DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, 6.4, 6.4)));
+        canvas.draw(
+            texture,
+            DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, 6.4, 6.4)),
+        );
 
         // Exit with no errors
         Ok(())
@@ -162,14 +173,13 @@ impl GameObject for FixableGameObject {
         false
     }
 
-    fn update(&mut self) -> GameResult {
+    fn update(&mut self, state: &GameState) -> GameResult {
         if self.is_broken() {
             self.frames_since_broken = Some(self.frames_since_broken.as_ref().unwrap() + 1);
-            self.key_object.as_mut().unwrap().update()?;
+            self.key_object.as_mut().unwrap().update(state)?;
         } else {
-            let chance_to_break_per_frame = 0.005;
-            if rand::thread_rng().gen_range(0. ..1.) < chance_to_break_per_frame {
-                self.mess_up();
+            if rand::thread_rng().gen_range(0. ..1.) < state.chance_of_breaking() {
+                self.mess_up(state);
             }
         }
         Ok(())
@@ -177,13 +187,13 @@ impl GameObject for FixableGameObject {
 }
 
 pub struct KeyPopup {
-    position: Vec2,
+    center: Vec2,
     text: Text,
     pub frames_existed: i32,
+    pub lifetime: i32,
 }
 
 impl KeyPopup {
-
     /// Creates a new key icon popup.
     /// ### Parameters
     /// ```rust
@@ -198,26 +208,22 @@ impl KeyPopup {
     /// ctx: &Context
     /// ```
     /// - The drawing context; Used to fetch the image for the texture.
-    /// 
+    ///
     /// ### Returns
     /// The newly created key icon object.
-    pub fn new(position: Vec2, key: &'static VirtualKeyCode) -> Self {
-
+    pub fn new(center: Vec2, key: &'static VirtualKeyCode, lifetime: i32) -> Self {
         // Create the text object
         let mut text = Text::new(format!("{:?}", key));
         text.set_font("PixeloidSans");
+        text.set_scale(55.);
 
         // Return the key game object
         Self {
-            position,
+            center,
             text,
-            frames_existed: 0
+            frames_existed: 0,
+            lifetime,
         }
-    }
-
-    /// The size to render the key icon at
-    pub fn dimensions() -> Vec2 {
-        Vec2::new(100., 100.)
     }
 
     pub fn texture(ctx: &Context) -> Image {
@@ -226,8 +232,7 @@ impl KeyPopup {
 }
 
 impl GameObject for KeyPopup {
-
-    fn update(&mut self) -> GameResult {
+    fn update(&mut self, _state: &GameState) -> GameResult {
         self.frames_existed += 1;
 
         return Ok(());
@@ -236,12 +241,34 @@ impl GameObject for KeyPopup {
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
 
         // Draw the key
-        canvas.draw(&KeyPopup::texture(ctx), DrawParam::new().dest_rect(Rect::new(self.position.x, self.position.y, 6.4, 6.4)));
+        let percent_of_lifetime_used = self.frames_existed as f32 / self.lifetime as f32;
+        let scale = 6.4 + (percent_of_lifetime_used * 10.).sin();
+
+        canvas.draw(
+            &KeyPopup::texture(ctx),
+            DrawParam::new().dest_rect(Rect::new(
+                self.center.x - KeyPopup::texture(ctx).width() as f32 * scale / 2. - 20.,
+                self.center.y - KeyPopup::texture(ctx).width() as f32 * scale / 2.,
+                scale, scale
+            )),
+        );
 
         // Draw the text
-        let text_position = self.position + KeyPopup::dimensions() / 2. - Vec2::new(11., 22.);
-        canvas.draw(&self.text, DrawParam::new().dest_rect(Rect::new(text_position.x, text_position.y, 3., 3.)));
-        
+        let text_scale = scale / 6.4;
+        let text_dimensions = {
+            let dims = self.text.measure(&ctx.gfx)?;
+            Vec2::new(dims.x * text_scale, dims.y * text_scale)
+        };
+        canvas.draw(
+            &self.text,
+            DrawParam::new().dest_rect(Rect::new(
+                self.center.x - text_dimensions.x / 2. - 17.,
+                self.center.y - text_dimensions.y / 2.,
+                text_scale,
+                text_scale,
+            ))
+        );
+
         // Exit with no errors
         Ok(())
     }

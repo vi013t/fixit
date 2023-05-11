@@ -9,7 +9,21 @@ use ggez::{
     Context, GameResult,
 };
 
-use crate::{api::{FixableGameObject, GameObject}, pause::GameOverScreen};
+use crate::{api::{FixableGameObject, GameObject}, pause::{GameOverScreen, GameOverCause}};
+
+pub struct GameState {
+    pub broken_lifetime: i32
+}
+
+impl GameState {
+    pub fn chance_of_breaking(&self) -> f32 {
+        self.broken_lifetime as f32 * 0.00001
+    }
+}
+
+static GAME_STATE: GameState = GameState {
+    broken_lifetime: 120
+};
 
 pub struct Window {
     frame: usize,
@@ -26,12 +40,18 @@ impl Window {
 
     /// Creates a new window.
     pub fn new(ctx: &Context) -> Window {
-        Window {
+        let mut window = Window {
             frame: 0,
             components: Vec::new(),
             background: Image::from_path(ctx, "/background.png").unwrap(),
             menu: None
+        };
+
+        for component in create_objects(ctx) {
+            window.add_component(component);
         }
+
+        window
     }
 
     /// Adds a component to be drawn on the screen.
@@ -63,17 +83,17 @@ impl EventHandler for Window {
         }
 
         // Update components
-        let mut game_over = false;
+        let mut game_over_key: Option<&VirtualKeyCode> = None;
         for component in &mut self.components {
-            component.update()?;
+            component.update(&GAME_STATE)?;
             if component.is_broken() && component.key_object.as_ref().unwrap().frames_existed > 120 {
-                game_over = true;
+                game_over_key = Some(component.fix_key);
                 break;
             }
         }
 
-        if game_over {
-            self.pause(Box::new(GameOverScreen::new()));
+        if game_over_key.is_some() {
+            self.pause(Box::new(GameOverScreen::new(GameOverCause::NotInTime(game_over_key.unwrap()))));
         }
 
         std::thread::yield_now();
@@ -88,13 +108,13 @@ impl EventHandler for Window {
 
             let mut fixed_something = false;
             for component in &mut self.components {
-                if component.on_key_pressed(&input.keycode.unwrap()) {
+                if component.on_key_pressed(input.keycode.as_ref().unwrap()) {
                     fixed_something = true
                 }
             }
 
             if !fixed_something {
-                self.pause(Box::new(GameOverScreen::new()));
+                self.pause(Box::new(GameOverScreen::new(GameOverCause::WrongKey(input.keycode.as_ref().unwrap()))));
             }
         }
         Ok(())
