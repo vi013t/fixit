@@ -1,5 +1,3 @@
-use rand::Rng;
-use std::path::PathBuf;
 use crate::screen::GameState;
 use ggez::{
     glam::Vec2,
@@ -7,6 +5,8 @@ use ggez::{
     winit::event::VirtualKeyCode,
     Context, GameResult,
 };
+use rand::Rng;
+use std::path::PathBuf;
 
 /// An object that exist in the game and can be drawn to the screen.
 pub trait GameObject {
@@ -97,13 +97,23 @@ impl FixableGameObject {
     /// ### Returns
     /// The newly created `FixableGameObject`.
     ///
-    pub fn new(texture: &str, position: Vec2, fix_key: &'static VirtualKeyCode, ctx: &Context) -> Self {
+    pub fn new(
+        texture: &str,
+        position: Vec2,
+        fix_key: &'static VirtualKeyCode,
+        ctx: &Context,
+    ) -> Self {
         Self {
             position,
             fix_key,
             frames_since_broken: None,
-            texture: Image::from_path(&ctx.gfx, PathBuf::from(texture.to_owned() + ".png")).unwrap(),
-            broken_texture: Image::from_path(&ctx.gfx, PathBuf::from(texture.to_owned() + "_broken.png")).unwrap(),
+            texture: Image::from_path(&ctx.gfx, PathBuf::from(texture.to_owned() + ".png"))
+                .unwrap(),
+            broken_texture: Image::from_path(
+                &ctx.gfx,
+                PathBuf::from(texture.to_owned() + "_broken.png"),
+            )
+            .unwrap(),
             key_object: None,
         }
     }
@@ -124,7 +134,7 @@ impl FixableGameObject {
     /// - Whether or not the object is broken
     pub fn is_broken(&self) -> bool {
         self.frames_since_broken.is_some()
-    } 
+    }
 
     /// "Breaks" this object. The texture is updated to the broken version and the timer will be changed.
     pub fn mess_up(&mut self, state: &GameState) {
@@ -139,7 +149,7 @@ impl FixableGameObject {
         self.key_object = Some(KeyPopup::new(
             Vec2::new(center.x, bottom),
             self.fix_key,
-            state.broken_lifetime 
+            state.broken_lifetime,
         ));
     }
 }
@@ -177,10 +187,8 @@ impl GameObject for FixableGameObject {
         if self.is_broken() {
             self.frames_since_broken = Some(self.frames_since_broken.as_ref().unwrap() + 1);
             self.key_object.as_mut().unwrap().update(state)?;
-        } else {
-            if rand::thread_rng().gen_range(0. ..1.) < state.chance_of_breaking() {
-                self.mess_up(state);
-            }
+        } else if rand::thread_rng().gen_range(0. ..1.) < state.chance_of_breaking() {
+            self.mess_up(state);
         }
         Ok(())
     }
@@ -234,12 +242,10 @@ impl KeyPopup {
 impl GameObject for KeyPopup {
     fn update(&mut self, _state: &GameState) -> GameResult {
         self.frames_existed += 1;
-
-        return Ok(());
+        Ok(())
     }
 
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-
         // Draw the key
         let percent_of_lifetime_used = self.frames_existed as f32 / self.lifetime as f32;
         let scale = 6.4 + (percent_of_lifetime_used * 10.).sin();
@@ -249,7 +255,8 @@ impl GameObject for KeyPopup {
             DrawParam::new().dest_rect(Rect::new(
                 self.center.x - KeyPopup::texture(ctx).width() as f32 * scale / 2. - 20.,
                 self.center.y - KeyPopup::texture(ctx).width() as f32 * scale / 2.,
-                scale, scale
+                scale,
+                scale,
             )),
         );
 
@@ -266,7 +273,7 @@ impl GameObject for KeyPopup {
                 self.center.y - text_dimensions.y / 2.,
                 text_scale,
                 text_scale,
-            ))
+            )),
         );
 
         // Exit with no errors
